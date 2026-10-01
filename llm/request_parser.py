@@ -1,4 +1,6 @@
 import os
+import logging
+import re
 from enum import StrEnum
 from typing import Protocol
 
@@ -7,6 +9,9 @@ from openai import OpenAI
 from pydantic import BaseModel, ConfigDict, Field
 
 from policy_engine.taxonomy import Activity, normalize_activity
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class RequestExtraction(BaseModel):
@@ -99,6 +104,34 @@ def _normalize_extracted_activity(value: str) -> Activity:
             raise ValueError(f"Unsupported activity {value!r}") from error
 
 
+def _safe_exception_message(error: Exception) -> str:
+    message = getattr(error, "message", None)
+    if not isinstance(message, str) or not message:
+        message = str(error)
+    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if api_key:
+        message = message.replace(api_key, "[REDACTED]")
+    message = re.sub(
+        r"(?i)(authorization\s*[:=]\s*bearer\s+)[^\s,;]+",
+        r"\1[REDACTED]",
+        message,
+    )
+    message = re.sub(r"\bsk-[A-Za-z0-9_-]{8,}\b", "[REDACTED]", message)
+    message = re.sub(
+        r"(?i)(api[_ -]?key[\"']?\s*[:=]\s*[\"']?)[^\s,\"'}]+",
+        r"\1[REDACTED]",
+        message,
+    )
+    message = re.sub(
+        r"(?i)(?:response(?: body)?|response_text)\s*[=:]\s*.*$",
+        "[response body omitted]",
+        message,
+    )
+    if message.lstrip().startswith(("{", "[")):
+        return "[response body omitted]"
+    return message[:500]
+
+
 def _clarification_for_missing(
     activity: Activity | None,
     location: str | None,
@@ -151,16 +184,18 @@ def parse_request(
         )
 
     load_dotenv()
-    selected_model = model or os.getenv("OPENAI_MODEL", "").strip()
+    selected_model = model or os.environ.get("OPENAI_MODEL", "").strip()
     if not selected_model:
+        _LOGGER.error("Request parser configuration missing: OPENAI_MODEL is not set")
         return _failure_result(
             RequestUnderstandingFailure.MISSING_CONFIGURATION,
             clarification_question="I can't understand the request right now. Please restate the activity, location, and time period.",
         )
 
     if client is None:
-        api_key = os.getenv("OPENAI_API_KEY", "").strip()
+        api_key = os.environ.get("OPENAI_API_KEY", "").strip()
         if not api_key:
+            _LOGGER.error("Request parser configuration missing: OPENAI_API_KEY is not set")
             return _failure_result(
                 RequestUnderstandingFailure.MISSING_CONFIGURATION,
                 clarification_question="I can't understand the request right now. Please restate the activity, location, and time period.",
@@ -177,7 +212,12 @@ def parse_request(
             ],
             text_format=RequestExtraction,
         )
-    except Exception:
+    except Exception as error:
+        _LOGGER.error(
+            "OpenAI request extraction failed: type=%s message=%s",
+            type(error).__name__,
+            _safe_exception_message(error),
+        )
         return _failure_result(RequestUnderstandingFailure.OPENAI_ERROR)
 
     parsed = response.output_parsed

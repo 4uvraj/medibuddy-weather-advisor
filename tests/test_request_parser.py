@@ -116,8 +116,14 @@ def test_missing_extraction_values_lead_to_targeted_clarification():
     assert "time period" in result.clarification_question
 
 
-def test_openai_failure_returns_clarification_without_guessed_values():
-    client = FakeClient(error=RuntimeError("network unavailable"))
+def test_openai_failure_returns_clarification_and_logs_safe_error(caplog, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-value-for-test")
+    client = FakeClient(
+        error=RuntimeError(
+            'network unavailable; Authorization: Bearer secret-value-for-test '
+            'sk-abcdefghijklmnopqrstuvwxyz response={"private":"payload"}'
+        )
+    )
 
     result = parse_request("Is cycling okay in Bhopal this evening?", client=client, model="test-model")
 
@@ -127,6 +133,12 @@ def test_openai_failure_returns_clarification_without_guessed_values():
     assert result.location is None
     assert result.requested_time_period is None
     assert result.clarification_question is not None
+    assert "RuntimeError" in caplog.text
+    assert "network unavailable" in caplog.text
+    assert "secret-value-for-test" not in caplog.text
+    assert "sk-abcdefghijklmnopqrstuvwxyz" not in caplog.text
+    assert '"private":"payload"' not in caplog.text
+    assert "response body omitted" in caplog.text
 
 
 @pytest.mark.parametrize("message", ["", "   ", "\n\t"])
@@ -149,6 +161,9 @@ def test_missing_model_configuration_returns_clarification(monkeypatch):
 
     assert result.failure == RequestUnderstandingFailure.MISSING_CONFIGURATION
     assert result.clarification_needed is True
+    assert result.clarification_question == (
+        "I can't understand the request right now. Please restate the activity, location, and time period."
+    )
     assert client.responses.call is None
 
 
@@ -161,6 +176,41 @@ def test_missing_api_key_returns_clarification_without_openai_call(monkeypatch):
 
     assert result.failure == RequestUnderstandingFailure.MISSING_CONFIGURATION
     assert result.clarification_needed is True
+    assert result.clarification_question == (
+        "I can't understand the request right now. Please restate the activity, location, and time period."
+    )
+
+
+def test_missing_configuration_logs_setting_name_without_secret(caplog, monkeypatch):
+    monkeypatch.setattr("llm.request_parser.load_dotenv", lambda: None)
+    monkeypatch.setenv("OPENAI_MODEL", "configured-model")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    result = parse_request("Can I cycle in Bhopal today?")
+
+    assert result.failure == RequestUnderstandingFailure.MISSING_CONFIGURATION
+    assert "OPENAI_API_KEY is not set" in caplog.text
+    assert "configured-model" not in caplog.text
+
+
+def test_parser_reads_api_key_from_runtime_environment(monkeypatch):
+    monkeypatch.setattr("llm.request_parser.load_dotenv", lambda: None)
+    monkeypatch.setenv("OPENAI_MODEL", "runtime-model")
+    monkeypatch.setenv("OPENAI_API_KEY", "runtime-secret")
+    client = FakeClient(parsed=extraction())
+    received = {}
+
+    class RecordingOpenAI:
+        def __init__(self, *, api_key):
+            received["api_key"] = api_key
+            self.responses = client.responses
+
+    monkeypatch.setattr("llm.request_parser.OpenAI", RecordingOpenAI)
+    result = parse_request("Can I cycle in Bhopal today?")
+
+    assert result.activity == Activity.CYCLING
+    assert received["api_key"] == "runtime-secret"
+    assert client.responses.call["model"] == "runtime-model"
 
 
 def test_openai_client_initialization_failure_returns_clarification(monkeypatch):
