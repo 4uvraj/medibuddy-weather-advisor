@@ -1,0 +1,1 @@
+"""Deterministic weather-advisory evaluation cases and runner."""

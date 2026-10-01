@@ -1,0 +1,237 @@
+policy_set_version: "1.0.0"
+sops:
+  - policy_id: "OUTDOOR-EXERCISE-WIND-BREEZY"
+    version: "1.0.0"
+    category: "outdoor_exercise"
+    activities: ["cycling", "running", "hiking"]
+    severity: "moderate"
+    priority: 20
+    effective_from: "2026-01-01"
+    effective_until: null
+    conditions:
+      all:
+        - field: "weather.wind_speed_10m"
+          operator: "gte"
+          value: 25
+          unit: "km/h"
+    directive: "Choose a route with fewer exposed sections and reduce effort if gusts affect balance."
+    rationale: "Strong winds can make exposed exercise routes less comfortable and harder to control."
+    source: "MediBuddy Outdoor Activity SOP"
+
+  - policy_id: "OUTDOOR-EXERCISE-WIND-STRONG"
+    version: "1.0.0"
+    category: "outdoor_exercise"
+    activities: ["cycling", "running", "hiking"]
+    severity: "high"
+    priority: 50
+    effective_from: "2026-01-01"
+    effective_until: null
+    conditions:
+      all:
+        - field: "weather.wind_speed_10m"
+          operator: "gte"
+          value: 40
+          unit: "km/h"
+    directive: "Postpone exposed cycling or exercise routes until winds ease."
+    rationale: "Very strong sustained wind can make exposed routes difficult to manage."
+    source: "MediBuddy Outdoor Activity SOP"
+
+  - policy_id: "OUTDOOR-EXERCISE-RAIN-LIKELY"
+    version: "1.0.0"
+    category: "outdoor_exercise"
+    activities: ["cycling", "running", "walking", "hiking"]
+    severity: "moderate"
+    priority: 25
+    effective_from: "2026-01-01"
+    effective_until: null
+    conditions:
+      all:
+        - field: "weather.precipitation_probability"
+          operator: "gte"
+          value: 70
+          unit: "%"
+    directive: "Plan a route with shelter options and suitable rain layers."
+    rationale: "Rain is likely during the selected forecast period."
+    source: "MediBuddy Outdoor Activity SOP"
+
+  - policy_id: "OUTDOOR-EXERCISE-RAIN-HEAVY"
+    version: "1.0.0"
+    category: "outdoor_exercise"
+    activities: ["cycling", "running", "walking", "hiking"]
+    severity: "high"
+    priority: 45
+    effective_from: "2026-01-01"
+    effective_until: null
+    conditions:
+      all:
+        - field: "weather.precipitation"
+          operator: "gte"
+          value: 10
+          unit: "mm"
+    directive: "Avoid routes with poor drainage and postpone trail exercise where footing may be affected."
+    rationale: "The forecast precipitation amount is high for the selected period."
+    source: "MediBuddy Outdoor Activity SOP"
+
+  - policy_id: "OUTDOOR-EXERCISE-UV-VERY-HIGH"
+    version: "1.0.0"
+    category: "outdoor_exercise"
+    activities: ["running", "walking", "hiking", "cycling"]
+    severity: "moderate"
+    priority: 30
+    effective_from: "2026-01-01"
+    effective_until: null
+    conditions:
+      all:
+        - field: "weather.uv_index"
+          operator: "gte"
+          value: 8
+          unit: "index"
+    directive: "Prefer a shaded route or a lower-UV time window and use sun protection appropriate to the activity."
+    rationale: "The forecast UV index is very high during the selected period."
+    source: "MediBuddy Outdoor Activity SOP"
+
+  - policy_id: "OUTDOOR-EXERCISE-HEAT"
+    version: "1.0.0"
+    category: "outdoor_exercise"
+    activities: ["running", "walking", "hiking", "cycling"]
+    severity: "high"
+    priority: 40
+    effective_from: "2026-01-01"
+    effective_until: null
+    conditions:
+      all:
+        - field: "weather.temperature_2m"
+          operator: "gte"
+          value: 35
+          unit: "degC"
+    directive: "Reschedule strenuous exercise to a cooler period or choose an indoor alternative."
+    rationale: "The forecast air temperature is high for strenuous outdoor exercise."
+    source: "MediBuddy Outdoor Activity SOP"
+
+  - policy_id: "TRAVEL-THUNDERSTORM"
+    version: "1.0.0"
+    category: "travel"
+    activities: ["travel"]
+    severity: "critical"
+    priority: 100
+    effective_from: "2026-01-01"
+    effective_until: null
+    conditions:
+      any:
+        - field: "weather.wmo_condition"
+          operator: "eq"
+          value: "thunderstorm"
+    directive: "Delay non-essential outdoor portions of the journey until the thunderstorm period has passed."
+    rationale: "Open-Meteo reports a thunderstorm category for the selected forecast period."
+    source: "MediBuddy Travel Weather SOP"
+
+  - policy_id: "TRAVEL-HEAVY-RAIN"
+    version: "1.0.0"
+    category: "travel"
+    activities: ["travel"]
+    severity: "high"
+    priority: 60
+    effective_from: "2026-01-01"
+    effective_until: null
+    conditions:
+      all:
+        - field: "weather.precipitation"
+          operator: "gte"
+          value: 20
+          unit: "mm"
+    directive: "Allow extra travel time and check current route or transit disruptions before departure."
+    rationale: "The forecast precipitation amount is substantial for the selected period."
+    source: "MediBuddy Travel Weather SOP"
+
+  - policy_id: "CHILDREN-OUTDOOR-PLAY-UV"
+    version: "1.0.0"
+    category: "children"
+    activities: ["outdoor_play", "picnic"]
+    audiences: ["children"]
+    severity: "moderate"
+    priority: 35
+    effective_from: "2026-01-01"
+    effective_until: null
+    conditions:
+      all:
+        - field: "weather.uv_index"
+          operator: "gte"
+          value: 6
+          unit: "index"
+    directive: "Schedule shaded breaks and limit uninterrupted play in direct sun."
+    rationale: "The forecast UV index is high enough to warrant reducing prolonged direct-sun exposure."
+    source: "MediBuddy Children Outdoor Activity SOP"
+
+  - policy_id: "CHILDREN-OUTDOOR-PLAY-COLD"
+    version: "1.0.0"
+    category: "children"
+    activities: ["outdoor_play", "picnic"]
+    audiences: ["children"]
+    severity: "low"
+    priority: 10
+    effective_from: "2026-01-01"
+    effective_until: null
+    conditions:
+      all:
+        - field: "weather.temperature_2m"
+          operator: "lte"
+          value: 5
+          unit: "degC"
+    directive: "Use warm layers and plan indoor warm-up breaks during outdoor play."
+    rationale: "Cool conditions can make extended stationary outdoor play uncomfortable."
+    source: "MediBuddy Children Outdoor Activity SOP"
+
+  - policy_id: "VULNERABLE-GROUPS-HEAT"
+    version: "1.0.0"
+    category: "vulnerable_groups"
+    activities:
+      [
+        "cycling",
+        "running",
+        "walking",
+        "hiking",
+        "picnic",
+        "travel",
+        "outdoor_play",
+        "water_activity",
+      ]
+    audiences: ["older_adult", "chronic_condition"]
+    severity: "high"
+    priority: 70
+    effective_from: "2026-01-01"
+    effective_until: null
+    conditions:
+      all:
+        - field: "weather.temperature_2m"
+          operator: "gte"
+          value: 32
+          unit: "degC"
+    directive: "Consider moving the activity to a cooler period and keep a shorter, shaded option available."
+    rationale: "Hot forecast conditions can place additional strain on people in the selected audience group."
+    source: "MediBuddy Vulnerable Groups Weather SOP"
+
+  - policy_id: "GENERAL-OUTDOOR-THUNDERSTORM"
+    version: "1.0.0"
+    category: "general_outdoor_activity"
+    activities:
+      [
+        "cycling",
+        "running",
+        "walking",
+        "hiking",
+        "picnic",
+        "outdoor_play",
+        "water_activity",
+      ]
+    severity: "critical"
+    priority: 100
+    effective_from: "2026-01-01"
+    effective_until: null
+    conditions:
+      any:
+        - field: "weather.wmo_condition"
+          operator: "in"
+          value: ["thunderstorm"]
+    directive: "Postpone the outdoor activity until the thunderstorm period has passed."
+    rationale: "Open-Meteo reports a thunderstorm category for the selected forecast period."
+    source: "MediBuddy General Outdoor Activity SOP"
