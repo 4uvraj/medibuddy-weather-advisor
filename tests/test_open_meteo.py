@@ -170,3 +170,59 @@ def test_elapsed_evening_returns_availability_not_unsupported_period():
         "No remaining evening forecast is available for today. Please try tomorrow evening."
     )
     provider.close()
+
+
+def test_429_followed_by_success_retries_and_succeeds():
+    responses = [
+        httpx.Response(429, headers={"Retry-After": "0"}),
+        httpx.Response(200, json={"results": [{"name": "Bhopal", "latitude": 23.2, "longitude": 77.4}]})
+    ]
+    def handler(request):
+        return responses.pop(0)
+
+    provider = make_provider(handler)
+    loc = provider.resolve_location("Bhopal")
+    assert loc.name == "Bhopal"
+    assert len(responses) == 0
+    provider.close()
+
+
+def test_persistent_429_eventually_returns_weather_unavailable():
+    def handler(request):
+        return httpx.Response(429, headers={"Retry-After": "0"})
+
+    provider = make_provider(handler)
+    with pytest.raises(GeocodingUnavailable):
+        provider.resolve_location("Bhopal")
+    provider.close()
+
+
+def test_normal_non_429_4xx_is_not_repeatedly_retried():
+    calls = []
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(400)
+
+    provider = make_provider(handler)
+    with pytest.raises(GeocodingUnavailable):
+        provider.resolve_location("Bhopal")
+
+    assert len(calls) == 1  # No retries for 400
+    provider.close()
+
+
+def test_repeated_weather_queries_make_fresh_requests():
+    calls = []
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(200, json=forecast_payload())
+
+    provider = make_provider(handler)
+    loc = ResolvedLocation(name="Bhopal", latitude=23.2, longitude=77.4)
+
+    provider.fetch_weather(loc, "today", now=FIXED_NOW)
+    assert len(calls) == 1
+
+    provider.fetch_weather(loc, "today", now=FIXED_NOW)
+    assert len(calls) == 2  # No cache, fresh call made
+    provider.close()

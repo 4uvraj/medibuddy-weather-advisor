@@ -1,5 +1,6 @@
 from datetime import date, datetime, timedelta
 from math import isfinite
+import time
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -88,6 +89,7 @@ class OpenMeteoProvider:
         self._client.close()
 
     def resolve_location(self, city: str) -> ResolvedLocation:
+
         payload = self._get_json(
             GEOCODING_URL,
             {"name": city, "count": 1, "language": "en", "format": "json"},
@@ -116,6 +118,7 @@ class OpenMeteoProvider:
         *,
         now: datetime | None = None,
     ) -> WeatherPeriod:
+
         payload = self._get_json(
             FORECAST_URL,
             {
@@ -139,15 +142,28 @@ class OpenMeteoProvider:
         *,
         error_type: type[OpenMeteoError],
     ) -> dict[str, Any]:
-        try:
-            response = self._client.get(url, params=params)
-            response.raise_for_status()
-            payload = response.json()
-        except (httpx.HTTPError, ValueError) as error:
-            raise error_type("Open-Meteo request failed") from error
-        if not isinstance(payload, dict):
-            raise error_type("Open-Meteo returned an invalid response")
-        return payload
+        max_retries = 2
+        for attempt in range(max_retries + 1):
+            try:
+                response = self._client.get(url, params=params)
+                response.raise_for_status()
+                payload = response.json()
+                if not isinstance(payload, dict):
+                    raise error_type("Open-Meteo returned an invalid response")
+                return payload
+            except httpx.HTTPStatusError as error:
+                if error.response.status_code == 429 and attempt < max_retries:
+                    retry_after = error.response.headers.get("Retry-After")
+                    if retry_after and retry_after.isdigit():
+                        delay = float(retry_after)
+                    else:
+                        delay = 1.0 * (2 ** attempt)
+                    time.sleep(delay)
+                    continue
+                raise error_type("Open-Meteo request failed") from error
+            except (httpx.HTTPError, ValueError) as error:
+                raise error_type("Open-Meteo request failed") from error
+        raise error_type("Open-Meteo request failed")
 
     @staticmethod
     def _finite_number(value: object, field: str) -> float:
