@@ -3,6 +3,9 @@ from threading import RLock
 from typing import Callable, Protocol, TypedDict
 
 from langgraph.graph import END, START, StateGraph
+import logging
+
+logger = logging.getLogger(__name__)
 
 from llm.request_parser import RequestUnderstandingFailure, RequestUnderstandingResult, parse_request
 from policy_engine.loader import load_policy_set
@@ -255,6 +258,7 @@ def build_weather_graph(
                 "availability_message": error.user_message,
             }
         except Exception:
+            logger.exception("Weather fetch failed")
             return {"weather_outcome": "failure"}
         return {"weather_outcome": "success", "weather_period": period}
 
