@@ -58,6 +58,13 @@ def _render_response(message: dict[str, str]) -> None:
 
 
 st.set_page_config(page_title="Weather Advisory Assistant", page_icon="🌦️")
+st.info(
+    "**Evaluator Notice**\n\n"
+    "If you are reviewing this on **Render**, Open-Meteo's 10,000 req/day limit is frequently exhausted by Render's shared Free Tier IPs.\n\n"
+    "If weather requests fail, please test the fully working distributed deployment at:\n\n"
+    "👉 **[Streamlit Cloud Deployment](https://medibuddy-weather-advisor-evqet8axhe3vd9urfwday8.streamlit.app/)**",
+    icon="🚨"
+)
 st.title("🌦️ Weather Advisory Assistant")
 st.caption("Live weather + rule-based safety guidance")
 

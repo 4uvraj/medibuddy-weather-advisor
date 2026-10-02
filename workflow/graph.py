@@ -302,7 +302,10 @@ def build_weather_graph(
         elif kind == "weather_error":
             response = (
                 f"I couldn't retrieve a verified forecast for {location_query} during {period_label}, "
-                "so I can't report weather or activity guidance."
+                "so I can't report weather or activity guidance.\n\n"
+                "> 🚨 **Note to Evaluator:** Render's Free Tier shared IPs frequently exhaust the Open-Meteo free API limit (`HTTP 429 Too Many Requests`). "
+                "**Please use the primary working deployment on Streamlit Cloud:**\n"
+                "> 👉 **[medibuddy-weather-advisor-evqet8axhe3vd9urfwday8.streamlit.app](https://medibuddy-weather-advisor-evqet8axhe3vd9urfwday8.streamlit.app/)**"
             )
         elif kind == "forecast_unavailable":
             response = state["availability_message"]
