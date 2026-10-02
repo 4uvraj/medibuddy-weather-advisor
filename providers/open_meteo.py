@@ -137,7 +137,7 @@ class OpenMeteoProvider:
                 "wind_speed_unit": "kmh",
                 "precipitation_unit": "mm",
                 "timezone": "auto",
-                "forecast_days": 7,
+                "forecast_days": 3,
             },
             error_type=WeatherUnavailable,
         )

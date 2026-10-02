@@ -300,10 +300,9 @@ def build_weather_graph(
         elif kind == "location_error":
             response = "I couldn't resolve that location right now, so I can't retrieve a verified forecast."
         elif kind == "weather_error":
-            error_msg = state.get("error_message", "Unknown error")
             response = (
                 f"I couldn't retrieve a verified forecast for {location_query} during {period_label}, "
-                f"so I can't report weather or activity guidance.\n\n**(DEBUG ERROR: {error_msg})**"
+                "so I can't report weather or activity guidance."
             )
         elif kind == "forecast_unavailable":
             response = state["availability_message"]
