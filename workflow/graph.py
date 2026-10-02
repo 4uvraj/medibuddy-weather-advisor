@@ -64,6 +64,7 @@ class WeatherGraphState(TypedDict, total=False):
     availability_message: str
     response_status: str
     response: str
+    error_message: str
 
 
 _SESSION_CONTEXT: dict[str, tuple[Activity | None, str | None, str | None]] = {}
@@ -257,9 +258,9 @@ def build_weather_graph(
                 "weather_outcome": "no_samples",
                 "availability_message": error.user_message,
             }
-        except Exception:
+        except Exception as err:
             logger.exception("Weather fetch failed")
-            return {"weather_outcome": "failure"}
+            return {"weather_outcome": "failure", "error_message": repr(err)}
         return {"weather_outcome": "success", "weather_period": period}
 
     def weather_failure_node(state: WeatherGraphState) -> dict[str, str]:
@@ -296,9 +297,10 @@ def build_weather_graph(
         elif kind == "location_error":
             response = "I couldn't resolve that location right now, so I can't retrieve a verified forecast."
         elif kind == "weather_error":
+            error_msg = state.get("error_message", "Unknown error")
             response = (
                 f"I couldn't retrieve a verified forecast for {location_query} during {period_label}, "
-                "so I can't report weather or activity guidance."
+                f"so I can't report weather or activity guidance.\n\n**(DEBUG ERROR: {error_msg})**"
             )
         elif kind == "forecast_unavailable":
             response = state["availability_message"]
