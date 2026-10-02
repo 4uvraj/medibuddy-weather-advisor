@@ -307,3 +307,274 @@ def test_follow_up_uses_only_same_session_context():
     assert second["response_status"] in {"matched_sop", "no_sop"}
     assert provider.lookups[-1] == ("forecast", "Bhopal", "this evening")
     assert isolated["response_status"] == "clarification"
+
+
+def test_case_a_there_resolves_to_most_recent_explicit_location():
+    """CASE A: 'there' in a follow-up uses the most recent explicit location (Indore)."""
+    period = WeatherPeriod(
+        label="tomorrow",
+        timezone="Asia/Kolkata",
+        samples=(
+            ForecastSample(
+                time=datetime.now(timezone.utc) + timedelta(hours=24),
+                weather=NormalizedWeather(
+                    temperature_2m=24, wind_speed_10m=6, precipitation=0,
+                    precipitation_probability=0, uv_index=3,
+                    wmo_condition=WeatherCondition.CLEAR,
+                ),
+                source_weather_code=0,
+            ),
+        ),
+    )
+
+    class RecordingProvider:
+        def __init__(self):
+            self.resolved_cities = []
+
+        def resolve_location(self, city):
+            self.resolved_cities.append(city)
+            return ResolvedLocation(name=city, latitude=22.7, longitude=75.8)
+
+        def fetch_weather(self, location, requested_time_period):
+            return period
+
+    provider = RecordingProvider()
+    call_count = [0]
+
+    def request_parser(message):
+        call_count[0] += 1
+        if call_count[0] == 1:
+            return parsed_request(activity=Activity.CYCLING, location="Indore", period="tomorrow")
+        return parsed_request(
+            activity=Activity.RUNNING, location=None, period="tomorrow morning",
+            failure=RequestUnderstandingFailure.INCOMPLETE_REQUEST,
+            question="Please clarify the location.",
+        )
+
+    session_id = "case-a"
+    clear_session_context(session_id)
+    graph = build_weather_graph(
+        provider=provider, policy_set=load_policy_set(MANIFEST_PATH), request_parser=request_parser,
+    )
+    first = graph.invoke({"message": "Can I cycle in Indore tomorrow?", "session_id": session_id})
+    second = graph.invoke({"message": "Is it okay to jog there tomorrow morning?", "session_id": session_id})
+    clear_session_context(session_id)
+
+    assert first["response_status"] in {"matched_sop", "no_sop"}
+    assert "Indore" in first["response"]
+    assert second["response_status"] in {"matched_sop", "no_sop"}
+    assert "Indore" in second["response"]
+    assert provider.resolved_cities == ["Indore", "Indore"]
+
+
+def test_case_b_there_resolves_to_latest_override_location():
+    """CASE B: After Bhopal then Jaipur, 'there' means Jaipur (the latest)."""
+    period = WeatherPeriod(
+        label="tomorrow",
+        timezone="Asia/Kolkata",
+        samples=(
+            ForecastSample(
+                time=datetime.now(timezone.utc) + timedelta(hours=24),
+                weather=NormalizedWeather(
+                    temperature_2m=24, wind_speed_10m=6, precipitation=0,
+                    precipitation_probability=0, uv_index=3,
+                    wmo_condition=WeatherCondition.CLEAR,
+                ),
+                source_weather_code=0,
+            ),
+        ),
+    )
+
+    class RecordingProvider:
+        def __init__(self):
+            self.resolved_cities = []
+
+        def resolve_location(self, city):
+            self.resolved_cities.append(city)
+            return ResolvedLocation(name=city, latitude=26.9, longitude=75.8)
+
+        def fetch_weather(self, location, requested_time_period):
+            return period
+
+    provider = RecordingProvider()
+    call_count = [0]
+
+    def request_parser(message):
+        call_count[0] += 1
+        if call_count[0] == 1:
+            return parsed_request(activity=Activity.CYCLING, location="Bhopal", period="today")
+        if call_count[0] == 2:
+            return parsed_request(activity=Activity.CYCLING, location="Jaipur", period="tomorrow")
+        return parsed_request(
+            activity=Activity.RUNNING, location=None, period="tomorrow morning",
+            failure=RequestUnderstandingFailure.INCOMPLETE_REQUEST,
+            question="Please clarify the location.",
+        )
+
+    session_id = "case-b"
+    clear_session_context(session_id)
+    graph = build_weather_graph(
+        provider=provider, policy_set=load_policy_set(MANIFEST_PATH), request_parser=request_parser,
+    )
+    graph.invoke({"message": "Can I cycle in Bhopal today?", "session_id": session_id})
+    graph.invoke({"message": "Can I cycle in Jaipur tomorrow?", "session_id": session_id})
+    third = graph.invoke({"message": "Can I jog there tomorrow morning?", "session_id": session_id})
+    clear_session_context(session_id)
+
+    assert third["response_status"] in {"matched_sop", "no_sop"}
+    assert "Jaipur" in third["response"]
+    assert provider.resolved_cities[-1] == "Jaipur"
+
+
+def test_case_c_fresh_session_there_asks_for_clarification():
+    """CASE C: 'there' in a fresh session with no prior location asks for clarification."""
+    class UnusedProvider:
+        def resolve_location(self, city):
+            raise AssertionError("Should not be called")
+
+        def fetch_weather(self, location, requested_time_period):
+            raise AssertionError("Should not be called")
+
+    def request_parser(message):
+        return parsed_request(
+            activity=Activity.RUNNING, location=None, period="tomorrow morning",
+            failure=RequestUnderstandingFailure.INCOMPLETE_REQUEST,
+            question="Please clarify the location.",
+        )
+
+    session_id = "case-c"
+    clear_session_context(session_id)
+    graph = build_weather_graph(
+        provider=UnusedProvider(), policy_set=load_policy_set(MANIFEST_PATH), request_parser=request_parser,
+    )
+    result = graph.invoke({"message": "Is it okay to jog there tomorrow morning?", "session_id": session_id})
+    clear_session_context(session_id)
+
+    assert result["response_status"] == "clarification"
+    assert "location" in result["response"].casefold()
+
+
+def test_case_d_clarification_flow_still_merges_partial_slots():
+    """CASE D: 'Can I go cycling this evening?' → clarification → 'Bhopal' → complete."""
+    period = WeatherPeriod(
+        label="evening",
+        timezone="Asia/Kolkata",
+        samples=(
+            ForecastSample(
+                time=datetime.now(timezone.utc) + timedelta(hours=1),
+                weather=NormalizedWeather(
+                    temperature_2m=24, wind_speed_10m=6, precipitation=0,
+                    precipitation_probability=0, uv_index=0,
+                    wmo_condition=WeatherCondition.CLEAR,
+                ),
+                source_weather_code=0,
+            ),
+        ),
+    )
+
+    class RecordingProvider:
+        def __init__(self):
+            self.lookups = []
+
+        def resolve_location(self, city):
+            self.lookups.append(("resolve", city))
+            return ResolvedLocation(name=city, latitude=23.2, longitude=77.4)
+
+        def fetch_weather(self, location, requested_time_period):
+            self.lookups.append(("fetch", location.name, requested_time_period))
+            return period
+
+    provider = RecordingProvider()
+    call_count = [0]
+
+    def request_parser(message):
+        call_count[0] += 1
+        if call_count[0] == 1:
+            return parsed_request(
+                activity=Activity.CYCLING, location=None, period="evening",
+                failure=RequestUnderstandingFailure.INCOMPLETE_REQUEST,
+                question="Please clarify the location.",
+            )
+        return parsed_request(
+            activity=None, location="Bhopal", period=None,
+            failure=RequestUnderstandingFailure.INCOMPLETE_REQUEST,
+        )
+
+    session_id = "case-d"
+    clear_session_context(session_id)
+    graph = build_weather_graph(
+        provider=provider, policy_set=load_policy_set(MANIFEST_PATH), request_parser=request_parser,
+    )
+    first = graph.invoke({"message": "Can I go cycling this evening?", "session_id": session_id})
+    second = graph.invoke({"message": "Bhopal", "session_id": session_id})
+    clear_session_context(session_id)
+
+    assert first["response_status"] == "clarification"
+    assert second["response_status"] in {"matched_sop", "no_sop"}
+    assert ("fetch", "Bhopal", "evening") in provider.lookups
+
+
+def test_case_e_parser_failure_clears_context_prevents_stale_leak():
+    """CASE E: An unsupported-activity failure clears context; next turn cannot reuse stale slots."""
+    period = WeatherPeriod(
+        label="tomorrow",
+        timezone="Asia/Kolkata",
+        samples=(
+            ForecastSample(
+                time=datetime.now(timezone.utc) + timedelta(hours=24),
+                weather=NormalizedWeather(
+                    temperature_2m=24, wind_speed_10m=6, precipitation=0,
+                    precipitation_probability=0, uv_index=0,
+                    wmo_condition=WeatherCondition.CLEAR,
+                ),
+                source_weather_code=0,
+            ),
+        ),
+    )
+
+    class RecordingProvider:
+        def __init__(self):
+            self.lookups = []
+
+        def resolve_location(self, city):
+            self.lookups.append(("resolve", city))
+            return ResolvedLocation(name=city, latitude=23.2, longitude=77.4)
+
+        def fetch_weather(self, location, requested_time_period):
+            self.lookups.append(("fetch", location.name, requested_time_period))
+            return period
+
+    provider = RecordingProvider()
+    call_count = [0]
+
+    def request_parser(message):
+        call_count[0] += 1
+        if call_count[0] == 1:
+            return parsed_request(activity=Activity.CYCLING, location="Bhopal", period="today")
+        if call_count[0] == 2:
+            return parsed_request(
+                activity=None, location=None, period="tomorrow",
+                failure=RequestUnderstandingFailure.UNSUPPORTED_ACTIVITY,
+                question="Which supported outdoor activity do you mean?",
+            )
+        return parsed_request(
+            activity=Activity.RUNNING, location=None, period="tomorrow",
+            failure=RequestUnderstandingFailure.INCOMPLETE_REQUEST,
+            question="Please clarify the location.",
+        )
+
+    session_id = "case-e"
+    clear_session_context(session_id)
+    graph = build_weather_graph(
+        provider=provider, policy_set=load_policy_set(MANIFEST_PATH), request_parser=request_parser,
+    )
+    first = graph.invoke({"message": "Can I cycle in Bhopal today?", "session_id": session_id})
+    second = graph.invoke({"message": "unsupported request", "session_id": session_id})
+    third = graph.invoke({"message": "Can I jog there tomorrow?", "session_id": session_id})
+    clear_session_context(session_id)
+
+    assert first["response_status"] in {"matched_sop", "no_sop"}
+    assert second["response_status"] == "clarification"
+    assert third["response_status"] == "clarification"
+    assert "location" in third["response"].casefold()
+    assert not any(call[0] == "resolve" for call in provider.lookups if len(provider.lookups) > 2)

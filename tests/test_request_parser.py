@@ -5,6 +5,7 @@ import pytest
 from llm.request_parser import (
     RequestExtraction,
     RequestUnderstandingFailure,
+    _is_contextual_location_reference,
     parse_request,
 )
 from policy_engine.taxonomy import Activity
@@ -197,7 +198,7 @@ def test_missing_api_key_returns_clarification_without_openai_call(monkeypatch):
     monkeypatch.setenv("OPENAI_MODEL", "test-model")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
-    result = parse_request("Can I cycle in Bhopal today?")
+    result = parse_request("I am planning an outdoor activity in Bhopal today")
 
     assert result.failure == RequestUnderstandingFailure.MISSING_CONFIGURATION
     assert result.clarification_needed is True
@@ -211,7 +212,7 @@ def test_missing_configuration_logs_setting_name_without_secret(caplog, monkeypa
     monkeypatch.setenv("OPENAI_MODEL", "configured-model")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
-    result = parse_request("Can I cycle in Bhopal today?")
+    result = parse_request("I am planning an outdoor activity in Bhopal today")
 
     assert result.failure == RequestUnderstandingFailure.MISSING_CONFIGURATION
     assert "OPENAI_API_KEY is not set" in caplog.text
@@ -231,7 +232,7 @@ def test_parser_reads_api_key_from_runtime_environment(monkeypatch):
             self.responses = client.responses
 
     monkeypatch.setattr("llm.request_parser.OpenAI", RecordingOpenAI)
-    result = parse_request("Can I cycle in Bhopal today?")
+    result = parse_request("I am planning an outdoor activity in Bhopal today")
 
     assert result.activity == Activity.CYCLING
     assert received["api_key"] == "runtime-secret"
@@ -247,7 +248,66 @@ def test_openai_client_initialization_failure_returns_clarification(monkeypatch)
     monkeypatch.setenv("OPENAI_MODEL", "test-model")
     monkeypatch.setenv("OPENAI_API_KEY", "configured-key")
 
-    result = parse_request("Can I cycle in Bhopal today?")
+    result = parse_request("I am planning an outdoor activity in Bhopal today")
 
     assert result.failure == RequestUnderstandingFailure.OPENAI_ERROR
     assert result.clarification_needed is True
+
+
+@pytest.mark.parametrize(
+    "reference",
+    ["there", "here", "same place", "Same Place", "THERE", "  there  ", "that city", "the same location"],
+)
+def test_contextual_location_reference_is_detected(reference):
+    assert _is_contextual_location_reference(reference) is True
+
+
+@pytest.mark.parametrize("real_city", ["Indore", "Bhopal", "Jaipur", "Teresópolis", "New Delhi"])
+def test_real_city_names_are_not_contextual_references(real_city):
+    assert _is_contextual_location_reference(real_city) is False
+
+
+def test_parser_converts_contextual_there_to_null_location():
+    client = FakeClient(parsed=extraction(activity="running", location="there", period="tomorrow morning"))
+
+    result = parse_request("Is it okay to jog there tomorrow morning?", client=client, model="test-model")
+
+    assert result.location is None
+    assert result.activity == Activity.RUNNING
+    assert result.requested_time_period == "tomorrow morning"
+    assert result.failure == RequestUnderstandingFailure.INCOMPLETE_REQUEST
+    assert result.clarification_needed is True
+
+
+def test_parser_converts_contextual_same_place_to_null_location():
+    client = FakeClient(parsed=extraction(activity="cycling", location="same place", period="today"))
+
+    result = parse_request("Can I cycle at the same place today?", client=client, model="test-model")
+
+    assert result.location is None
+    assert result.failure == RequestUnderstandingFailure.INCOMPLETE_REQUEST
+
+
+def test_local_parser_success():
+    from llm.request_parser import _try_local_parse
+    result = _try_local_parse("Can I cycle in Bhopal tomorrow?")
+    assert result is not None
+    assert result.activity == Activity.CYCLING
+    assert result.location == "Bhopal"
+    assert result.requested_time_period == "tomorrow"
+
+
+def test_local_parser_contextual_location_incomplete():
+    from llm.request_parser import _try_local_parse
+    result = _try_local_parse("Can I jog there tomorrow morning?")
+    assert result is not None
+    assert result.activity == Activity.RUNNING
+    assert result.requested_time_period == "tomorrow morning"
+    assert result.location is None
+    assert result.failure == RequestUnderstandingFailure.INCOMPLETE_REQUEST
+
+
+def test_local_parser_fallback():
+    from llm.request_parser import _try_local_parse
+    result = _try_local_parse("I am planning an outdoor activity in Bhopal tomorrow")
+    assert result is None  # no recognizable activity, falls back to OpenAI
