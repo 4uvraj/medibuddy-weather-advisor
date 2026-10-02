@@ -79,7 +79,10 @@ class WeatherPeriod(ProviderModel):
     samples: tuple[ForecastSample, ...] = Field(min_length=1)
 
 
-_GLOBAL_CLIENT = httpx.Client(timeout=10.0)
+_GLOBAL_CLIENT = httpx.Client(
+    timeout=10.0,
+    headers={"User-Agent": "WeatherAdvisoryBot/1.0 (https://github.com/4uvraj/medibuddy-weather-advisor)"}
+)
 
 
 class OpenMeteoProvider:

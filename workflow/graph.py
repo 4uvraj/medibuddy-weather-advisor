@@ -260,7 +260,10 @@ def build_weather_graph(
             }
         except Exception as err:
             logger.exception("Weather fetch failed")
-            return {"weather_outcome": "failure", "error_message": repr(err)}
+            error_message = repr(err)
+            if getattr(err, "__cause__", None):
+                error_message += f" (Cause: {repr(err.__cause__)})"
+            return {"weather_outcome": "failure", "error_message": error_message}
         return {"weather_outcome": "success", "weather_period": period}
 
     def weather_failure_node(state: WeatherGraphState) -> dict[str, str]:
