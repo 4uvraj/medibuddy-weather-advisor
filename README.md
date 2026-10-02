@@ -39,7 +39,7 @@ To add SOP #11 (or any later SOP), add a valid record to `policies/sops.yaml`, u
 
 ## Tests and Evaluations
 
-The current regression suite has **79 pytest tests**. It includes policy schema/matcher tests, parser tests, mocked Open-Meteo tests, and branching LangGraph tests. The evaluation runner checks exact and paraphrased SOP matches, no-match, forecast failure, and adversarial input using deterministic provider fixtures.
+The current regression suite has **96 pytest tests**. It includes policy schema/matcher tests, parser tests, mocked Open-Meteo tests, Streamlit session-context tests, and branching LangGraph tests. The evaluation runner checks exact and paraphrased SOP matches, no-match, forecast failure, and adversarial input using deterministic provider fixtures.
 
 The severe-weather evaluation is the only live-weather case. On the last recorded run, Open-Meteo returned 23 Bhopal forecast samples but none matched a high/critical SOP; the case was honestly recorded as `NOT_APPLICABLE`, not forced to pass. The Streamlit smoke test submitted “Is it safe to cycle in Bhopal today?” through the UI and received live forecast facts plus the explicit no-SOP response. Evaluation request slots are injected as fixtures, so the deterministic evaluation runner does not score the live OpenAI extraction quality.
 

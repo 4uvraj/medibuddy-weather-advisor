@@ -104,6 +104,17 @@ def _normalize_extracted_activity(value: str) -> Activity:
             raise ValueError(f"Unsupported activity {value!r}") from error
 
 
+def _normalize_requested_time_period(value: str | None) -> str | None:
+    if not value:
+        return None
+    normalized = " ".join(value.casefold().split()).rstrip(".,!?;:")
+    return {
+        "this morning": "morning",
+        "this afternoon": "afternoon",
+        "this evening": "evening",
+    }.get(normalized, normalized) or None
+
+
 def _safe_exception_message(error: Exception) -> str:
     message = getattr(error, "message", None)
     if not isinstance(message, str) or not message:
@@ -232,9 +243,7 @@ def parse_request(
         return _failure_result(RequestUnderstandingFailure.INVALID_OUTPUT)
 
     location = extraction.location.strip() if extraction.location else None
-    requested_time_period = (
-        extraction.requested_time_period.strip() if extraction.requested_time_period else None
-    )
+    requested_time_period = _normalize_requested_time_period(extraction.requested_time_period)
     location = location or None
     requested_time_period = requested_time_period or None
 

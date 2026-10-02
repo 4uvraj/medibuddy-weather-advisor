@@ -48,6 +48,14 @@ class UnsupportedTimePeriod(OpenMeteoError):
     """The requested time period is not supported by deterministic selection."""
 
 
+class ForecastSamplesUnavailable(OpenMeteoError):
+    """A valid forecast period has no currently available forecast samples."""
+
+    def __init__(self, user_message: str) -> None:
+        self.user_message = user_message
+        super().__init__(user_message)
+
+
 class ProviderModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -230,7 +238,18 @@ class OpenMeteoProvider:
                 raise WeatherUnavailable("Open-Meteo returned invalid hourly weather data") from error
 
         if not samples:
-            raise UnsupportedTimePeriod("No forecast hours are available for the requested period")
+            day_part = self._day_part(requested_time_period)
+            if target_date == local_now.date():
+                if day_part:
+                    message = (
+                        f"No remaining {day_part} forecast is available for today. "
+                        f"Please try tomorrow {day_part}."
+                    )
+                else:
+                    message = "No remaining forecast is available for today. Please try tomorrow."
+            else:
+                message = f"No forecast samples are available for {requested_time_period}."
+            raise ForecastSamplesUnavailable(message)
         return WeatherPeriod(
             label=requested_time_period,
             timezone=timezone_name,
@@ -244,6 +263,15 @@ class OpenMeteoProvider:
         if now.tzinfo is None:
             return now.replace(tzinfo=timezone)
         return now.astimezone(timezone)
+
+    @staticmethod
+    def _day_part(period: str) -> str | None:
+        normalized = " ".join(period.casefold().split())
+        for prefix in ("today ", "tomorrow ", "this "):
+            if normalized.startswith(prefix):
+                normalized = normalized.removeprefix(prefix)
+                break
+        return normalized if normalized in {"morning", "afternoon", "evening", "night", "tonight"} else None
 
     @staticmethod
     def _select_window(period: str, now: datetime) -> tuple[date, frozenset[int] | None]:

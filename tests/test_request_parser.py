@@ -84,6 +84,31 @@ def test_exact_live_query_slots_normalize_extracted_cycle_variant():
     assert result.requested_time_period == "today"
 
 
+@pytest.mark.parametrize(
+    ("message", "activity", "period", "expected_activity", "expected_period"),
+    [
+        ("Can I take my bike out this evening?", "bike", "This evening.", Activity.CYCLING, "evening"),
+        ("Can I cycle this evening?", "cycling", "this evening", Activity.CYCLING, "evening"),
+        ("Can I go cycling tomorrow?", "cycling", "Tomorrow.", Activity.CYCLING, "tomorrow"),
+        ("Can I cycle today?", "cycle", "TODAY", Activity.CYCLING, "today"),
+    ],
+)
+def test_natural_time_period_requests_are_normalized(
+    message,
+    activity,
+    period,
+    expected_activity,
+    expected_period,
+):
+    client = FakeClient(parsed=extraction(activity=activity, location=None, period=period))
+
+    result = parse_request(message, client=client, model="test-model")
+
+    assert result.activity == expected_activity
+    assert result.requested_time_period == expected_period
+    assert result.failure == RequestUnderstandingFailure.INCOMPLETE_REQUEST
+
+
 def test_request_extraction_schema_contains_only_the_three_allowed_slots():
     schema = RequestExtraction.model_json_schema()
 

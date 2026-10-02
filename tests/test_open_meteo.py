@@ -7,6 +7,7 @@ import pytest
 from providers.open_meteo import (
     FORECAST_URL,
     GEOCODING_URL,
+    ForecastSamplesUnavailable,
     GeocodingUnavailable,
     LocationNotFound,
     OpenMeteoProvider,
@@ -142,4 +143,30 @@ def test_incomplete_weather_sample_is_rejected_instead_of_filled_in():
 
     with pytest.raises(WeatherUnavailable, match="invalid hourly weather data"):
         provider.fetch_weather(location, "today", now=FIXED_NOW)
+    provider.close()
+
+
+def test_evening_with_available_forecast_samples_returns_weather():
+    provider = make_provider(lambda request: httpx.Response(200, json=forecast_payload()))
+    location = ResolvedLocation(name="Bhopal", latitude=23.2, longitude=77.4)
+    now = datetime(2026, 10, 2, 16, 30, tzinfo=ZoneInfo("UTC"))
+
+    period = provider.fetch_weather(location, "evening", now=now)
+
+    assert [sample.time.hour for sample in period.samples] == [17, 18]
+    assert period.label == "evening"
+    provider.close()
+
+
+def test_elapsed_evening_returns_availability_not_unsupported_period():
+    provider = make_provider(lambda request: httpx.Response(200, json=forecast_payload()))
+    location = ResolvedLocation(name="Bhopal", latitude=23.2, longitude=77.4)
+    now = datetime(2026, 10, 2, 22, 30, tzinfo=ZoneInfo("UTC"))
+
+    with pytest.raises(ForecastSamplesUnavailable) as error:
+        provider.fetch_weather(location, "evening", now=now)
+
+    assert error.value.user_message == (
+        "No remaining evening forecast is available for today. Please try tomorrow evening."
+    )
     provider.close()

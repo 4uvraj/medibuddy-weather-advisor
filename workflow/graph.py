@@ -18,6 +18,7 @@ from policy_engine.models import (
 )
 from policy_engine.taxonomy import Activity
 from providers.open_meteo import (
+    ForecastSamplesUnavailable,
     ForecastSample,
     GeocodingUnavailable,
     LocationNotFound,
@@ -57,11 +58,12 @@ class WeatherGraphState(TypedDict, total=False):
     weather_period: WeatherPeriod
     policy_result: PolicyEvaluationResult
     response_kind: str
+    availability_message: str
     response_status: str
     response: str
 
 
-_SESSION_CONTEXT: dict[str, tuple[Activity, str, str]] = {}
+_SESSION_CONTEXT: dict[str, tuple[Activity | None, str | None, str | None]] = {}
 _SESSION_LOCK = RLock()
 
 
@@ -177,6 +179,8 @@ def build_weather_graph(
         session_id = state.get("session_id", "default")
         base: dict[str, object] = {"request_result": result, "session_id": session_id}
         if result.failure not in {None, RequestUnderstandingFailure.INCOMPLETE_REQUEST}:
+            with _SESSION_LOCK:
+                _SESSION_CONTEXT.pop(session_id, None)
             return {
                 **base,
                 "activity": result.activity,
@@ -188,10 +192,16 @@ def build_weather_graph(
             }
 
         with _SESSION_LOCK:
-            previous = _SESSION_CONTEXT.get(session_id)
-        activity = result.activity or (previous[0] if previous else None)
-        location = result.location or (previous[1] if previous else None)
-        period = result.requested_time_period or (previous[2] if previous else None)
+            previous = _SESSION_CONTEXT.get(session_id, (None, None, None))
+            activity = result.activity if result.activity is not None else previous[0]
+            location = result.location if result.location is not None else previous[1]
+            period = (
+                result.requested_time_period
+                if result.requested_time_period is not None
+                else previous[2]
+            )
+            _SESSION_CONTEXT[session_id] = (activity, location, period)
+
         if activity is None or location is None or period is None:
             return {
                 **base,
@@ -202,8 +212,6 @@ def build_weather_graph(
                 "clarification_question": _question_for_missing(activity, location, period),
             }
 
-        with _SESSION_LOCK:
-            _SESSION_CONTEXT[session_id] = (activity, location, period)
         return {
             **base,
             "activity": activity,
@@ -241,12 +249,20 @@ def build_weather_graph(
                     "Please specify a forecast period such as today, this evening, or tomorrow."
                 ),
             }
+        except ForecastSamplesUnavailable as error:
+            return {
+                "weather_outcome": "no_samples",
+                "availability_message": error.user_message,
+            }
         except Exception:
             return {"weather_outcome": "failure"}
         return {"weather_outcome": "success", "weather_period": period}
 
     def weather_failure_node(state: WeatherGraphState) -> dict[str, str]:
         return {"response_kind": "weather_error"}
+
+    def no_forecast_samples_node(state: WeatherGraphState) -> dict[str, str]:
+        return {"response_kind": "forecast_unavailable"}
 
     def match_policies_node(state: WeatherGraphState) -> dict[str, PolicyEvaluationResult]:
         request = PolicyRequest(activity=state["activity"])
@@ -280,6 +296,8 @@ def build_weather_graph(
                 f"I couldn't retrieve a verified forecast for {location_query} during {period_label}, "
                 "so I can't report weather or activity guidance."
             )
+        elif kind == "forecast_unavailable":
+            response = state["availability_message"]
         else:
             location = state["resolved_location"]
             weather_period = state["weather_period"]
@@ -313,6 +331,7 @@ def build_weather_graph(
     workflow.add_node("location_failure", location_failure_node)
     workflow.add_node("fetch_weather", fetch_weather_node)
     workflow.add_node("weather_failure", weather_failure_node)
+    workflow.add_node("no_forecast_samples", no_forecast_samples_node)
     workflow.add_node("match_policies", match_policies_node)
     workflow.add_node("no_sop", no_sop_node)
     workflow.add_node("matched_sop", matched_sop_node)
@@ -338,10 +357,12 @@ def build_weather_graph(
         {
             "success": "match_policies",
             "clarification": "ask_clarification",
+            "no_samples": "no_forecast_samples",
             "failure": "weather_failure",
         },
     )
     workflow.add_edge("weather_failure", "final_response")
+    workflow.add_edge("no_forecast_samples", "final_response")
     workflow.add_conditional_edges(
         "match_policies",
         lambda state: state["policy_result"].status.value,

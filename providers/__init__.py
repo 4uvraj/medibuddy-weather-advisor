@@ -1,5 +1,6 @@
 from providers.open_meteo import (
     ForecastSample,
+    ForecastSamplesUnavailable,
     GeocodingUnavailable,
     LocationNotFound,
     OpenMeteoProvider,
@@ -11,6 +12,7 @@ from providers.open_meteo import (
 
 __all__ = [
     "ForecastSample",
+    "ForecastSamplesUnavailable",
     "GeocodingUnavailable",
     "LocationNotFound",
     "OpenMeteoProvider",

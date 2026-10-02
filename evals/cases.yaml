@@ -48,7 +48,7 @@ cases:
 
   - name: "paraphrase_uv_running"
     check: "A differently worded running request matches the high-UV SOP."
-    input: "Should I jog in Pune this afternoon?"
+    input: "Should I jog in Pune tomorrow afternoon?"
     activity: "running"
     location: "Pune"
     period: "tomorrow afternoon"

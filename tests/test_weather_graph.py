@@ -8,7 +8,13 @@ from policy_engine.loader import load_policy_set
 from policy_engine.models import EvaluationStatus
 from policy_engine.taxonomy import Activity
 from policy_engine.weather import NormalizedWeather, WeatherCondition
-from providers.open_meteo import OpenMeteoProvider, ResolvedLocation, WeatherPeriod, ForecastSample
+from providers.open_meteo import (
+    ForecastSamplesUnavailable,
+    OpenMeteoProvider,
+    ResolvedLocation,
+    WeatherPeriod,
+    ForecastSample,
+)
 from workflow.graph import build_weather_graph, clear_session_context
 
 
@@ -166,6 +172,30 @@ def test_weather_api_failure_does_not_report_weather_or_advice():
     assert "Applicable SOP guidance" not in result["response"]
     assert len(captured) == 2
     provider.close()
+
+
+def test_no_remaining_evening_samples_returns_clear_availability_message():
+    class EveningUnavailableProvider:
+        def resolve_location(self, city):
+            return ResolvedLocation(name=city, latitude=23.2, longitude=77.4)
+
+        def fetch_weather(self, location, requested_time_period):
+            raise ForecastSamplesUnavailable(
+                "No remaining evening forecast is available for today. Please try tomorrow evening."
+            )
+
+    result, _ = graph_run(
+        EveningUnavailableProvider(),
+        parsed_request(period="evening"),
+        "Can I go cycling this evening?",
+        session_id="evening-unavailable",
+    )
+
+    assert result["response_status"] == "forecast_unavailable"
+    assert result["response"] == (
+        "No remaining evening forecast is available for today. Please try tomorrow evening."
+    )
+    assert "clarify" not in result["response"].casefold()
 
 
 def test_no_sop_match_states_no_guidance_and_does_not_add_advice(policies):
