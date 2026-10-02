@@ -79,14 +79,19 @@ class WeatherPeriod(ProviderModel):
     samples: tuple[ForecastSample, ...] = Field(min_length=1)
 
 
+_GLOBAL_CLIENT = httpx.Client(timeout=10.0)
+
+
 class OpenMeteoProvider:
     """Small sync adapter for Open-Meteo geocoding and hourly forecast data."""
 
     def __init__(self, client: httpx.Client | None = None) -> None:
-        self._client = client if client is not None else httpx.Client(timeout=10.0)
+        self._client = client if client is not None else _GLOBAL_CLIENT
+        self._owns_client = client is not None
 
     def close(self) -> None:
-        self._client.close()
+        if self._owns_client:
+            self._client.close()
 
     def resolve_location(self, city: str) -> ResolvedLocation:
 
@@ -161,7 +166,12 @@ class OpenMeteoProvider:
                     time.sleep(delay)
                     continue
                 raise error_type("Open-Meteo request failed") from error
-            except (httpx.HTTPError, ValueError) as error:
+            except httpx.RequestError as error:
+                if attempt < max_retries:
+                    time.sleep(1.0 * (2 ** attempt))
+                    continue
+                raise error_type("Open-Meteo request failed") from error
+            except ValueError as error:
                 raise error_type("Open-Meteo request failed") from error
         raise error_type("Open-Meteo request failed")
 
